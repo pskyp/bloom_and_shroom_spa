@@ -46,6 +46,7 @@ class MyHomePageState extends State<MyHomePage> {
   String? latestPhotoUrl;
 
   List<TemperatureData> lastMinuteData = [];
+  List<TemperatureData> lastFiveMinutesData = [];
   List<TemperatureData> lastHourData = [];
   List<TemperatureData> aggregatedHourData = [];
 
@@ -58,11 +59,12 @@ class MyHomePageState extends State<MyHomePage> {
   String? errorMessage;
   Timer? oneMinuteUpdateTimer;
   Timer? fiveMinuteUpdateTimer;
- @override
+  @override
   void initState() {
     super.initState();
     fetchInitialData();
     connectToBroker();
+    fetchAllData();
 
     // Timer to update last minute data every minute
     oneMinuteUpdateTimer = Timer.periodic(Duration(minutes: 1), (timer) async {
@@ -76,7 +78,25 @@ class MyHomePageState extends State<MyHomePage> {
         debugPrint('Error updating last minute data: $e');
       }
     });
-Future<void> fetchAllData() async {
+    // Timer to update last hour data every 5 minutes
+    fiveMinuteUpdateTimer = Timer.periodic(Duration(minutes: 5), (timer) async {
+      try {
+        List<TemperatureData> hourData = await apiService.fetchLastHourData();
+        List<TemperatureData> fiveMinuteData =
+            await apiService.fetchLastFiveMinutesData();
+
+        setState(() {
+          lastHourData = hourData;
+          lastFiveMinutesData = fiveMinuteData;
+          aggregateLastHourData();
+        });
+      } catch (e) {
+        debugPrint('Error updating last hour data: $e');
+      }
+    });
+  }
+
+  Future<void> fetchAllData() async {
     try {
       final minuteData = await apiService.fetchLastMinuteData();
       final hourData = await apiService.fetchLastHourData();
@@ -88,19 +108,7 @@ Future<void> fetchAllData() async {
       debugPrint('Error fetching data: $e');
     }
   }
-    // Timer to update last hour data every 5 minutes
-    fiveMinuteUpdateTimer = Timer.periodic(Duration(minutes: 5), (timer) async {
-      try {
-        List<TemperatureData> hourData = await apiService.fetchLastHourData();
-        setState(() {
-          lastHourData = hourData;
-          aggregateLastHourData();
-        });
-      } catch (e) {
-        debugPrint('Error updating last hour data: $e');
-      }
-    });
-  }
+
   @override
   void dispose() {
     aggregationTimer?.cancel();
@@ -129,7 +137,7 @@ Future<void> fetchAllData() async {
     }
   }
 
-   Future<void> connectToBroker() async {
+  Future<void> connectToBroker() async {
     client = MqttBrowserClient('ws://$broker', clientId);
     client!.port = 8080; // Ensure this matches your WebSocket port
     client!.logging(on: true);
@@ -329,24 +337,31 @@ Future<void> fetchAllData() async {
                           buildPhotoSection(),
                           const SizedBox(height: 40),
                           const Text(
-                            'Temperature - Last Minute',
+                            'Temperature - Last Minutes (5-Second Intervals)',
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           SizedBox(
-                            height: 200,
-                            child: RealTimeGraph(data: lastMinuteData),
-                          ),
+                              height: 200,
+                              child: RealTimeGraph(data: lastMinuteData)),
                           const SizedBox(height: 40),
+                          const Text(
+                            'Temperature - Last 5 Minutes (30-Second Intervals)',
+                            style: TextStyle(
+                                fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                          SizedBox(
+                              height: 200,
+                              child: RealTimeGraph(data: lastFiveMinutesData)),
+                          const SizedBox(height: 20),
                           const Text(
                             'Temperature - Last Hour (5-Minute Intervals)',
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           SizedBox(
-                            height: 200,
-                            child: HistoricalGraph(data: aggregatedHourData),
-                          ),
+                              height: 200,
+                              child: HistoricalGraph(data: lastHourData)),
                           const SizedBox(height: 20),
                         ],
                       ),
