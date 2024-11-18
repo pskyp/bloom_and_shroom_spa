@@ -53,18 +53,18 @@ class MyHomePageState extends State<MyHomePage> {
   final ApiService apiService = ApiService(
       baseUrl: 'http://192.168.0.192:8000'); // Replace with your FastAPI URL
 
-  Timer? aggregationTimer;
+  Timer? oneMinuteUpdateTimer;
+  Timer? fiveMinuteUpdateTimer;
 
   bool isLoading = true;
   String? errorMessage;
-  Timer? oneMinuteUpdateTimer;
-  Timer? fiveMinuteUpdateTimer;
+
   @override
   void initState() {
     super.initState();
     fetchInitialData();
     connectToBroker();
-    fetchAllData();
+    // Removed fetchAllData() as fetchInitialData now covers necessary data
 
     // Timer to update last minute data every minute
     oneMinuteUpdateTimer = Timer.periodic(Duration(minutes: 1), (timer) async {
@@ -78,7 +78,8 @@ class MyHomePageState extends State<MyHomePage> {
         debugPrint('Error updating last minute data: $e');
       }
     });
-    // Timer to update last hour data every 5 minutes
+
+    // Timer to update last five minutes and last hour data every 5 minutes
     fiveMinuteUpdateTimer = Timer.periodic(Duration(minutes: 5), (timer) async {
       try {
         List<TemperatureData> hourData = await apiService.fetchLastHourData();
@@ -91,27 +92,13 @@ class MyHomePageState extends State<MyHomePage> {
           aggregateLastHourData();
         });
       } catch (e) {
-        debugPrint('Error updating last hour data: $e');
+        debugPrint('Error updating last hour and five minutes data: $e');
       }
     });
   }
 
-  Future<void> fetchAllData() async {
-    try {
-      final minuteData = await apiService.fetchLastMinuteData();
-      final hourData = await apiService.fetchLastHourData();
-      setState(() {
-        lastMinuteData = minuteData;
-        lastHourData = hourData;
-      });
-    } catch (e) {
-      debugPrint('Error fetching data: $e');
-    }
-  }
-
   @override
   void dispose() {
-    aggregationTimer?.cancel();
     oneMinuteUpdateTimer?.cancel();
     fiveMinuteUpdateTimer?.cancel();
     client?.disconnect();
@@ -121,9 +108,12 @@ class MyHomePageState extends State<MyHomePage> {
   Future<void> fetchInitialData() async {
     try {
       List<TemperatureData> minuteData = await apiService.fetchLastMinuteData();
+      List<TemperatureData> fiveMinuteData =
+          await apiService.fetchLastFiveMinutesData();
       List<TemperatureData> hourData = await apiService.fetchLastHourData();
       setState(() {
         lastMinuteData = minuteData;
+        lastFiveMinutesData = fiveMinuteData;
         lastHourData = hourData;
         aggregateLastHourData(); // Initial aggregation
         isLoading = false;
@@ -186,6 +176,9 @@ class MyHomePageState extends State<MyHomePage> {
       });
     } else {
       debugPrint('Failed to connect to MQTT broker');
+      setState(() {
+        errorMessage = 'Failed to connect to MQTT broker.';
+      });
     }
   }
 
@@ -288,6 +281,7 @@ class MyHomePageState extends State<MyHomePage> {
             onPressed: () {
               // Handle download if needed
               // For example, open the URL in a browser
+              // You can use url_launcher package for this
             },
             child: const Text('Download Photo'),
           ),
@@ -337,7 +331,7 @@ class MyHomePageState extends State<MyHomePage> {
                           buildPhotoSection(),
                           const SizedBox(height: 40),
                           const Text(
-                            'Temperature - Last Minutes (5-Second Intervals)',
+                            'Temperature - Last Minute (5-Second Intervals)',
                             style: TextStyle(
                                 fontSize: 18, fontWeight: FontWeight.bold),
                           ),
@@ -361,7 +355,9 @@ class MyHomePageState extends State<MyHomePage> {
                           ),
                           SizedBox(
                               height: 200,
-                              child: HistoricalGraph(data: lastHourData)),
+                              child: HistoricalGraph(
+                                  data:
+                                      aggregatedHourData)), // Use aggregated data
                           const SizedBox(height: 20),
                         ],
                       ),
